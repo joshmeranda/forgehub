@@ -1,6 +1,5 @@
-import datetime
+import events
 
-import event
 from github import Github
 
 
@@ -9,16 +8,13 @@ def main():
     with open("token") as token_file:
         token = token_file.read()[:-1]
 
-    # client = Github(login_or_token=token)
-    client = Github()
-    client.per_page = 1000
+    client = Github(login_or_token=token)
 
-    start_date = datetime.datetime(year=2022, month=1, day=1)
-    start_date -= datetime.timedelta(days=365)
+    print(f"Fetching events...")
 
-    n = event.get_calendar_event_count_after(client, start_date)
+    (d, n) = events.get_max_events_per_day(client, "joshmeranda")
 
-    print(n)
+    print(d, n)
 
 
 if __name__ == "__main__":
