@@ -51,6 +51,9 @@ def __calendar_event_count(event: Event) -> int:
     For documentation on the available event types see here:
         https://docs.github.com/en/developers/webhooks-and-events/events/github-event-types#publicevent
 
+    :param event: The event whose calendar activity count need sto be retrieved.s
+    :return: The amount of activity for the given event.
+
     todo: handle screwy timezone stuff
     """
     match event.type:
@@ -87,7 +90,7 @@ def get_max_events_per_day(github: Github, login: str) -> (date, int):
 
     :param github: The github api client to use when accessing data from github.
     :param login: The login name for the user whose events to pull.
-    :return: The maximum amount of
+    :return: The day with the most calendar activity and the amount of activity.
     """
 
     events = github.get_user(login).get_events()
@@ -99,3 +102,22 @@ def get_max_events_per_day(github: Github, login: str) -> (date, int):
             freq[event.created_at.date()] += __calendar_event_count(event)
 
     return max(freq.items(), key=lambda x: x[1])
+
+
+def get_commits_pre_data_level(max_per_day: int, dilute: bool = True) -> (int, int, int, int, int):
+    """Retrieve the amount of commits which must be performed to force a value of `max_per_day` into the lowest level.
+
+    Note that it is generally safe to assume that the lowest data level (data level 0) will be 0; however, this is not
+    guaranteed. Take care when setting `dilute` to True since it will generate many more commits.
+
+    :param max_per_day: The greatest amount of activity on any single day.
+    :param dilute: If False, the returned boundaries will not be far greater than the amount of current activity, if
+    True `get_commits_pre_data_level` will attempt to force the value of `max_per_day` into the lowest possible data
+    level.
+    :return: A tuple containing the upper bounds for the amount of commit which must be made to put a date into a
+    specific data level.
+    """
+    step = max_per_day if dilute else max_per_day // 4
+    start = max_per_day if dilute else 0
+
+    return tuple(range(start, start + step * 4, step))
