@@ -364,3 +364,10 @@ CHARACTERS_5_BIT: dict[str, DataLevelMap] = {
           (0, 0, 0)),
 }
 
+
+def __get_last_week_end() -> datetime:
+    """Retrieve the date of the most recent saturday where we can start adding commit activity."""
+    now = datetime.now()
+
+    return now - timedelta(days=(now.isoweekday() + 1) % 7)
+
