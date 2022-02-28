@@ -371,3 +371,29 @@ def __get_last_week_end() -> datetime:
 
     return now - timedelta(days=(now.isoweekday() + 1) % 7)
 
+
+def __render_str(s: str) -> DataLevelMap:
+    # the amount of bits needed to legibly render the string with empty space between letters
+    total_length = len(s) * 3 + len(s) - 1
+
+    data_level_map = [[0 for _ in range(total_length)] for _ in range(7)]
+
+    for offset, c in enumerate(s):
+        try:
+            c_data_level_map = CHARACTERS_5_BIT[c]
+        except KeyError:
+            raise ValueError(f"character '{c}' cannot be rendered")
+
+        # merge the DataLevelMap for the current character
+        for i in range(7):
+            for j in range(3):
+                data_level_map[i][offset * 3 + j + offset] = c_data_level_map[i][j]
+
+    return tuple(tuple(i) for i in data_level_map)
+
+
+def render(obj) -> DataLevelMap:
+    if isinstance(obj, str):
+        return __render_str(obj)
+
+    raise TypeError(f"cannot render a value of type {type(obj)}")
