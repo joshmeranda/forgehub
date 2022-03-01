@@ -1,20 +1,19 @@
-import events
-
-from github import Github
+#!/usr/bin/env python3
+import render
 
 
 def main():
-    # todo: we need a better way to do this (storing a personal access token in plaintext is gross)
-    with open("token") as token_file:
-        token = token_file.read()[:-1]
+    m = render.render("BOOCHIE")
 
-    client = Github(login_or_token=token)
+    m = render.render("HIRE ME PLS :)")
 
-    print(f"Fetching events...")
-
-    (d, n) = events.get_max_events_per_day(client, "joshmeranda")
-
-    print(d, n)
+    for offset in range(7):
+        for i in range(0, len(m), 7):
+            if m[i + offset] == 4:
+                print('#', end='')
+            else:
+                print(' ', end='')
+        print()
 
 
 if __name__ == "__main__":
