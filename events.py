@@ -4,6 +4,8 @@ from enum import Enum
 
 from github import Event, Github
 
+DataLevelBoundaries = (int, int, int, int, int)
+
 
 class __EventType(str, Enum):
     """Constant for even type names.
@@ -104,7 +106,7 @@ def get_max_events_per_day(github: Github, login: str) -> (date, int):
     return max(freq.items(), key=lambda x: x[1])
 
 
-def get_commits_per_data_level(max_per_day: int, dilute: bool = True) -> (int, int, int, int, int):
+def get_data_level_boundaries(max_per_day: int, dilute: bool = False) -> DataLevelBoundaries:
     """Retrieve the amount of commits which must be performed to force a value of `max_per_day` into the lowest level.
 
     Note that it is generally safe to assume that the lowest data level (data level 0) will be 0; however, this is not
@@ -120,4 +122,4 @@ def get_commits_per_data_level(max_per_day: int, dilute: bool = True) -> (int, i
     step = max_per_day if dilute else max_per_day // 4
     start = max_per_day if dilute else 0
 
-    return tuple(range(start, start + step * 4, step))
+    return tuple(range(start, start + step * 4 + 1, step))
