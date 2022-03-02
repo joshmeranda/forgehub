@@ -8,9 +8,6 @@ import pygit2
 from pygit2 import GitError, RemoteCallbacks, Repository, Signature
 
 
-# const GIT_CONFIG_USER_NAME: &str = "user.name";
-# const GIT_CONFIG_USER_EMAIL: &str = "user.email";
-
 class Driver:
     __GIT_CONFIG_USER_NAME: str = "user.name"
     __GIT_CONFIG_USER_EMAIL: str = "user.email"

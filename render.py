@@ -2,6 +2,8 @@ from abc import ABC, abstractmethod
 from datetime import datetime, timedelta
 from typing import Any
 
+from events import DataLevelBoundaries
+
 """Provides a type alias for a mapping between dates and the associated activity level."""
 DataLevelMap = dict[datetime, int]
 
@@ -215,6 +217,11 @@ CHARACTERS_5_BIT: dict[str, tuple[int]] = {
           0, 0, 3, 0, 4, 0, 0,
           0, 0, 0, 0, 0, 0, 0),
 }
+
+
+def scale_data_level_map(boundaries: DataLevelBoundaries, data_level_map: DataLevelMap) -> DataLevelMap:
+    """Scale the given data map levels to the given boundaries."""
+    return {date: boundaries[data_level] for date, data_level in data_level_map.items()}
 
 
 def get_last_week_end() -> datetime:
