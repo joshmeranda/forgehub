@@ -1,36 +1,36 @@
 from typing import Optional
 
+import pygit2
+from pygit2 import RemoteCallbacks, Repository
+
 
 class Driver:
-    def __init__(self, path: Optional[str] = None,
+    def __init__(self, path: str,
                  https: Optional[str] = None,
-                 ssh: Optional[str] = None):
+                 ssh: Optional[str] = None,
+                 clone_callbacks: Optional[RemoteCallbacks] = None):
         """Driver is a wrapper around all git operations.
 
-        At least one of `path`, `https`, or `ssh` must be specified or a
-        `ValueError` will be raised. If 2 or one are specified they will be
-        used in this order: ssh, https, path. If either `ssh` or `https` is
-        specified, the repo will be cloned into the current working directory.
+        If neither `https` not `ssh` are specified, `Driver` will attempt to
+        initialize a git repository at that path. Otherwise, `Driver` will
+        attempt to clone the repository into `path` using the appropriate
+        protocol. If both are specified, `https` will be ignored in favor of
+        `ssh`.
+
+        Take care to pass in an appropriately configured `remote_callbacks`
+        values to ensure there are no issues when cloning the repositories.
+
 
         :param path: The path to an existing repository where git operations will take place.
         :param https: The https clone url for the repository.
         :param ssh: The ssh clone url for the repository.
+
+        https://www.pygit2.org/recipes.html#main-porcelain-commands
         """
 
         if ssh is not None:
-            pass
+            self.__repo = pygit2.clone_repository(ssh, path, callbacks=clone_callbacks)
         elif https is not None:
-            pass
-        elif path is not None:
-            pass
+            self.__repo = pygit2.clone_repository(https, path, callbacks=clone_callbacks)
         else:
-            raise ValueError("at least one of ssh, http, or path must not be None")
-
-    def __clone_ssh(self):
-        pass
-
-    def __clone_https(self):
-        pass
-
-    def init_repo(self):
-        pass
+            self.__repo = pygit2.init_repository(path)
