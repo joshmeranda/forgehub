@@ -104,7 +104,7 @@ def get_max_events_per_day(github: Github, login: str) -> (date, int):
     return max(freq.items(), key=lambda x: x[1])
 
 
-def get_commits_pre_data_level(max_per_day: int, dilute: bool = True) -> (int, int, int, int, int):
+def get_commits_per_data_level(max_per_day: int, dilute: bool = True) -> (int, int, int, int, int):
     """Retrieve the amount of commits which must be performed to force a value of `max_per_day` into the lowest level.
 
     Note that it is generally safe to assume that the lowest data level (data level 0) will be 0; however, this is not
