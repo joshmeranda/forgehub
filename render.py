@@ -1,9 +1,12 @@
+from abc import ABC, abstractmethod
 from datetime import datetime, timedelta
+from typing import Any
 
-DataLevelMap = tuple[int]
+"""Provides a type alias for a mapping between dates and the associated activity level."""
+DataLevelMap = dict[datetime, int]
 
 # mapping of characters to the data level which should be in the 5 bit space available for weekdays
-CHARACTERS_5_BIT: dict[str, DataLevelMap] = {
+CHARACTERS_5_BIT: dict[str, tuple[int]] = {
     "A": (0, 4, 4, 4, 4, 4, 0,
           0, 4, 0, 0, 4, 0, 0,
           0, 4, 4, 4, 4, 4, 0),
@@ -209,35 +212,46 @@ CHARACTERS_5_BIT: dict[str, DataLevelMap] = {
           0, 0, 0, 0, 0, 0, 0),
 
     ":": (0, 0, 0, 0, 0, 0, 0,
-          0, 0, 4, 0, 4, 0, 0,
+          0, 0, 3, 0, 4, 0, 0,
           0, 0, 0, 0, 0, 0, 0),
 }
 
 
-def __get_last_week_end() -> datetime:
+def get_last_week_end() -> datetime:
     """Retrieve the date of the most recent saturday where we can start adding commit activity."""
     now = datetime.now()
 
     return now - timedelta(days=(now.isoweekday() + 1) % 7)
 
 
-def __render_str(s: str) -> DataLevelMap:
-    data_level_map = []
+class RendererBase(ABC):
+    """Base class for all DataLevelMap renders."""
 
-    for offset, c in enumerate(s):
-        try:
-            c_data_level_map = CHARACTERS_5_BIT[c]
-        except KeyError:
-            raise ValueError(f"character '{c}' cannot be rendered")
-
-        data_level_map.extend(c_data_level_map)
-        data_level_map.extend((0, 0, 0, 0, 0, 0, 0))
-
-    return tuple(data_level_map)
+    @abstractmethod
+    def render(self, obj: Any, starting_date: datetime) -> DataLevelMap:
+        """The render method should accept an object and return a DataLevelMap representative of that object."""
 
 
-def render(obj) -> DataLevelMap:
-    if isinstance(obj, str):
-        return __render_str(obj)
+class TextRenderer(RendererBase):
+    def render(self, obj: Any, starting_date: datetime = get_last_week_end()) -> DataLevelMap:
+        if not isinstance(obj, str):
+            raise TypeError(f"TextRenderer can not render object of type '{type(obj)}'")
 
-    raise TypeError(f"cannot render a value of type {type(obj)}")
+        date = get_last_week_end()
+        data_level_map = dict()
+
+        for c in obj:
+            try:
+                data_levels = CHARACTERS_5_BIT[c]
+            except KeyError:
+                raise ValueError(f"character '{c}' cannot be rendered")
+
+            for data_level in data_levels[::-1]:  # todo: this reverse might not be necessary
+                data_level_map[date] = data_level
+                date -= timedelta(days=1)
+
+            for _ in range(7):
+                data_level_map[date] = 0
+                date -= timedelta(days=1)
+
+        return data_level_map
