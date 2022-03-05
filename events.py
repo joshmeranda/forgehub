@@ -2,7 +2,10 @@ from collections import defaultdict
 from datetime import date
 from enum import Enum
 
-from github import Event, Github
+import github
+from github import Event, NamedUser
+
+DataLevelBoundaries = (int, int, int, int, int)
 
 
 class __EventType(str, Enum):
@@ -60,9 +63,11 @@ def __calendar_event_count(event: Event) -> int:
         case __EventType.FORK:
             return 1
         case __EventType.PUSH:
-            # verify that teh event ref matches the commit default repo
-            if event.payload["ref"].split("/")[-1] == event.repo.default_branch:
-                return len(event.payload["commits"])
+            try:
+                if event.payload["ref"].split("/")[-1] == event.repo.default_branch:
+                    return len(event.payload["commits"])
+            except github.UnknownObjectException:
+                pass
         case __EventType.ISSUE:
             if event.payload["action"] == "opened":
                 return 1
@@ -76,7 +81,7 @@ def __calendar_event_count(event: Event) -> int:
     return 0
 
 
-def get_max_events_per_day(github: Github, login: str) -> (date, int):
+def get_max_events_per_day(user: NamedUser) -> (date, int):
     """Retrieve the maximum amount of events on a single day from the last 90 days.
 
     The github events api limits the event timeline to 90 days: "Only events created within the past 90 days will be
@@ -88,23 +93,20 @@ def get_max_events_per_day(github: Github, login: str) -> (date, int):
     For documentation on what gets counted as a contribution see here:
         https://docs.github.com/en/account-and-profile/setting-up-and-managing-your-github-profile/managing-contribution-graphs-on-your-profile/viewing-contributions-on-your-profile#what-counts-as-a-contribution
 
-    :param github: The github api client to use when accessing data from github.
-    :param login: The login name for the user whose events to pull.
+    :param user: The user whose events to retrieve.
     :return: The day with the most calendar activity and the amount of activity.
     """
-
-    events = github.get_user(login).get_events()
+    events = user.get_events()
 
     freq = defaultdict(lambda: 0)
 
     for event in events:
-        if event.created_at.year == 2021 and event.created_at.month == 12 and event.created_at.day == 2:
-            freq[event.created_at.date()] += __calendar_event_count(event)
+        freq[event.created_at.date()] += __calendar_event_count(event)
 
     return max(freq.items(), key=lambda x: x[1])
 
 
-def get_commits_pre_data_level(max_per_day: int, dilute: bool = True) -> (int, int, int, int, int):
+def get_data_level_boundaries(max_per_day: int, dilute: bool = False) -> DataLevelBoundaries:
     """Retrieve the amount of commits which must be performed to force a value of `max_per_day` into the lowest level.
 
     Note that it is generally safe to assume that the lowest data level (data level 0) will be 0; however, this is not
@@ -118,6 +120,5 @@ def get_commits_pre_data_level(max_per_day: int, dilute: bool = True) -> (int, i
     specific data level.
     """
     step = max_per_day if dilute else max_per_day // 4
-    start = max_per_day if dilute else 0
 
-    return tuple(range(start, start + step * 4, step))
+    return tuple(range(0, step * 4 + 1, step))
