@@ -11,8 +11,8 @@ DataLevelBoundaries = (int, int, int, int, int)
 class __EventType(str, Enum):
     """Constant for even type names.
 
-     Taken from github docs:
-        https://docs.github.com/en/developers/webhooks-and-events/events/github-event-types#gollumevent
+    Taken from github docs:
+       https://docs.github.com/en/developers/webhooks-and-events/events/github-event-types#gollumevent
     """
 
     COMMIT_COMMENT = "CommitCommentEvent"
@@ -106,7 +106,9 @@ def get_max_events_per_day(user: NamedUser) -> (date, int):
     return max(freq.items(), key=lambda x: x[1])
 
 
-def get_data_level_boundaries(max_per_day: int, dilute: bool = False) -> DataLevelBoundaries:
+def get_data_level_boundaries(
+    max_per_day: int, dilute: bool = False
+) -> DataLevelBoundaries:
     """Retrieve the amount of commits which must be performed to force a value of `max_per_day` into the lowest level.
 
     Note that it is generally safe to assume that the lowest data level (data level 0) will be 0; however, this is not
