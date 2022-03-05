@@ -247,13 +247,13 @@ class TextRenderer(RendererBase):
         date = get_last_week_end()
         data_level_map = dict()
 
-        for c in obj:
+        for c in reversed(obj):
             try:
                 data_levels = CHARACTERS_5_BIT[c]
             except KeyError:
                 raise ValueError(f"character '{c}' cannot be rendered")
 
-            for data_level in data_levels[::-1]:  # todo: this reverse might not be necessary
+            for data_level in reversed(data_levels):
                 data_level_map[date] = data_level
                 date -= timedelta(days=1)
 

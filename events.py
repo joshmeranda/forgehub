@@ -120,6 +120,5 @@ def get_data_level_boundaries(max_per_day: int, dilute: bool = False) -> DataLev
     specific data level.
     """
     step = max_per_day if dilute else max_per_day // 4
-    start = max_per_day if dilute else 0
 
-    return tuple(range(start, start + step * 4 + 1, step))
+    return tuple(range(0, step * 4 + 1, step))
