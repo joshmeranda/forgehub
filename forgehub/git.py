@@ -1,4 +1,4 @@
-from render import DataLevelMap
+from forgehub.render import DataLevelMap
 
 from typing import Optional
 from os import path

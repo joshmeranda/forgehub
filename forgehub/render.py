@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from datetime import datetime, timedelta
 from typing import Any
 
-from events import DataLevelBoundaries
+from forgehub.events import DataLevelBoundaries
 
 """Provides a type alias for a mapping between dates and the associated activity level."""
 DataLevelMap = dict[datetime, int]
