@@ -8,6 +8,7 @@ from events import DataLevelBoundaries
 DataLevelMap = dict[datetime, int]
 
 # mapping of characters to the data level which should be in the 5 bit space available for weekdays
+# fmt: off
 CHARACTERS_5_BIT: dict[str, tuple[int]] = {
     "A": (0, 4, 4, 4, 4, 4, 0,
           0, 4, 0, 0, 4, 0, 0,
@@ -217,9 +218,12 @@ CHARACTERS_5_BIT: dict[str, tuple[int]] = {
           0, 0, 3, 0, 4, 0, 0,
           0, 0, 0, 0, 0, 0, 0),
 }
+# fmt: on
 
 
-def scale_data_level_map(boundaries: DataLevelBoundaries, data_level_map: DataLevelMap) -> DataLevelMap:
+def scale_data_level_map(
+    boundaries: DataLevelBoundaries, data_level_map: DataLevelMap
+) -> DataLevelMap:
     """Scale the given data map levels to the given boundaries."""
     return {date: boundaries[data_level] for date, data_level in data_level_map.items()}
 
@@ -240,7 +244,9 @@ class RendererBase(ABC):
 
 
 class TextRenderer(RendererBase):
-    def render(self, obj: Any, starting_date: datetime = get_last_week_end()) -> DataLevelMap:
+    def render(
+        self, obj: Any, starting_date: datetime = get_last_week_end()
+    ) -> DataLevelMap:
         if not isinstance(obj, str):
             raise TypeError(f"TextRenderer can not render object of type '{type(obj)}'")
 

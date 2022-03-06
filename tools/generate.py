@@ -29,10 +29,21 @@ class DataLevel(str, Enum):
 
 
 def parse_args():
-    parser = ArgumentParser(prog="generate",
-                            description="generate a DataLevelMap from a human readable representation")
-    parser.add_argument("--oneline", action="store_true", help="print the resulting python tuple in one line rather than multiple")
-    parser.add_argument(dest="source", nargs="?", help="the human readable representation source for the generated code", type=str)
+    parser = ArgumentParser(
+        prog="generate",
+        description="generate a DataLevelMap from a human readable representation",
+    )
+    parser.add_argument(
+        "--oneline",
+        action="store_true",
+        help="print the resulting python tuple in one line rather than multiple",
+    )
+    parser.add_argument(
+        dest="source",
+        nargs="?",
+        help="the human readable representation source for the generated code",
+        type=str,
+    )
 
     if len(sys.argv) == 1:
         print("missing required source value")
@@ -52,7 +63,11 @@ def display_data_level(data_level: tuple[int], oneline: bool):
     newlines = list(m.start() for m in re.finditer(",", string_builder))[6::7]
 
     for offset, i in enumerate(newlines):
-        string_builder = string_builder[:offset + i + 1:] + "\n" + string_builder[offset + i + 1::]
+        string_builder = (
+            string_builder[: offset + i + 1 :]
+            + "\n"
+            + string_builder[offset + i + 1 : :]
+        )
     print(string_builder)
 
 

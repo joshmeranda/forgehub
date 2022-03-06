@@ -5,7 +5,15 @@ from os import path
 import subprocess
 
 import pygit2
-from pygit2 import credentials, GitError, Keypair, RemoteCallbacks, Repository, Signature, Username
+from pygit2 import (
+    credentials,
+    GitError,
+    Keypair,
+    RemoteCallbacks,
+    Repository,
+    Signature,
+    Username,
+)
 
 
 class SshRemoteCallbacks(RemoteCallbacks):
@@ -30,11 +38,14 @@ class Driver:
     __GIT_CONFIG_USER_EMAIL: str = "user.email"
     __MUTATING_FILE_NAME: str = "repr.txt"
 
-    def __init__(self, repo_path: str,
-                 https: Optional[str] = None,
-                 ssh: Optional[str] = None,
-                 clone_callbacks: Optional[RemoteCallbacks] = None,
-                 push_callbacks: Optional[RemoteCallbacks] = None):
+    def __init__(
+        self,
+        repo_path: str,
+        https: Optional[str] = None,
+        ssh: Optional[str] = None,
+        clone_callbacks: Optional[RemoteCallbacks] = None,
+        push_callbacks: Optional[RemoteCallbacks] = None,
+    ):
         """Driver is a wrapper around all git operations.
 
         If neither `https` not `ssh` are specified, `Driver` will attempt to initialize a git repository at that path.
@@ -52,9 +63,13 @@ class Driver:
         self.__push_callbacks = push_callbacks
 
         if ssh is not None:
-            self.__repo: Repository = pygit2.clone_repository(ssh, repo_path, callbacks=clone_callbacks)
+            self.__repo: Repository = pygit2.clone_repository(
+                ssh, repo_path, callbacks=clone_callbacks
+            )
         elif https is not None:
-            self.__repo: Repository = pygit2.clone_repository(https, repo_path, callbacks=clone_callbacks)
+            self.__repo: Repository = pygit2.clone_repository(
+                https, repo_path, callbacks=clone_callbacks
+            )
         else:
             self.__repo: Repository = pygit2.init_repository(repo_path)
 
@@ -71,9 +86,13 @@ class Driver:
                 config[Driver.__GIT_CONFIG_USER_EMAIL],
             )
         except ValueError:
-            raise ValueError("could not determine author from repository, system, or global config")
+            raise ValueError(
+                "could not determine author from repository, system, or global config"
+            )
 
-        mutating_file = path.join(path.dirname(self.__repo.path.rstrip(path.sep)), "repr.txt")
+        mutating_file = path.join(
+            path.dirname(self.__repo.path.rstrip(path.sep)), "repr.txt"
+        )
 
         for date, commit_count in commits_per_day.items():
             for i in range(commit_count):
@@ -95,14 +114,18 @@ class Driver:
 
                 tree = index.write_tree()
 
-                self.__repo.create_commit(ref, signature, signature, message, tree, parents)
+                self.__repo.create_commit(
+                    ref, signature, signature, message, tree, parents
+                )
 
                 # change the commit date
                 # todo: ideally we would not spawn a subprocess every time to change the commit date
                 new_date = date.strftime("%Y.%m.%d")
-                _proc = subprocess.run(f"git commit --amend --no-edit --date={new_date}".split(),
-                                       cwd=path.dirname(self.__repo.path.rstrip(path.sep)),
-                                       capture_output=True)
+                _proc = subprocess.run(
+                    f"git commit --amend --no-edit --date={new_date}".split(),
+                    cwd=path.dirname(self.__repo.path.rstrip(path.sep)),
+                    capture_output=True,
+                )
 
     def push(self, remote_name: str = "origin"):
         """Push to the remote with the given name.
@@ -112,7 +135,9 @@ class Driver:
         try:
             remote = self.__repo.remotes[remote_name]
         except KeyError:
-            return ValueError(f"no such remote '{remote_name}' exists for the given repo")
+            return ValueError(
+                f"no such remote '{remote_name}' exists for the given repo"
+            )
 
         # todo: we should accept this from user, or determine the default branch name
         remote.push(["refs/heads/main"], callbacks=self.__push_callbacks)
