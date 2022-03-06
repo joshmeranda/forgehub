@@ -1,9 +1,9 @@
-#!/usr/bin/env python3
-import events
-import render
+from forgehub.events import *
+from forgehub.git import *
+from forgehub.render import *
+
 import os
 
-from git import Driver, SshRemoteCallbacks
 from github import Github
 
 
@@ -44,29 +44,3 @@ def main():
 
     print("pushing to remote...")
     driver.push()
-
-
-def test_push():
-    home = os.getenv("HOME")
-    private = os.path.join(home, ".ssh", "id_rsa")
-    public = os.path.join(home, ".ssh", "id_rsa.pub")
-
-    print("opening repo...")
-    driver = Driver(
-        "forgehub-test",
-        clone_callbacks=SshRemoteCallbacks(private, public),
-        push_callbacks=SshRemoteCallbacks(private, public),
-    )
-
-    print("pushing to remote...")
-    driver.push()
-
-
-def test_render():
-    print("rendering...")
-    renderer = render.TextRenderer()
-    renderer.render("ABC")
-
-
-if __name__ == "__main__":
-    main()
