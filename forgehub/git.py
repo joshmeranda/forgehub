@@ -15,6 +15,11 @@ from pygit2 import (
     Username,
 )
 
+__all__ = [
+    "SshRemoteCallbacks",
+    "Driver",
+]
+
 
 class SshRemoteCallbacks(RemoteCallbacks):
     def __init__(self, private: str, public: str):
@@ -52,13 +57,14 @@ class Driver:
         Otherwise, `Driver` will attempt to clone the repository into `path` using the appropriate protocol. If both are
         specified, `https` will be ignored in favor of `ssh`.
 
-        Take care to pass in an appropriately configured `remote_callbacks values to ensure there are no issues when cloning the repositories.
+        Take care to pass in an appropriately configured `remote_callbacks values to ensure there are no issues when
+        cloning the repositories.
+
+        todo: do not differentiate between ssh and https
 
         :param repo_path: The path to an existing repository where git operations will take place.
         :param https: The https clone url for the repository.
         :param ssh: The ssh clone url for the repository.
-
-        https://www.pygit2.org/recipes.html#main-porcelain-commands
         """
         self.__push_callbacks = push_callbacks
 
