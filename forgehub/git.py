@@ -46,35 +46,28 @@ class Driver:
     def __init__(
         self,
         repo_path: str,
-        https: Optional[str] = None,
-        ssh: Optional[str] = None,
+        upstream: Optional[str] = None,
         clone_callbacks: Optional[RemoteCallbacks] = None,
         push_callbacks: Optional[RemoteCallbacks] = None,
     ):
-        """Driver is a wrapper around all git operations.
+        """A wrapper around all git repository operations.
 
-        If neither `https` not `ssh` are specified, `Driver` will attempt to initialize a git repository at that path.
-        Otherwise, `Driver` will attempt to clone the repository into `path` using the appropriate protocol. If both are
-        specified, `https` will be ignored in favor of `ssh`.
+        if `upstream` is `None`, `Driver` will attempt to initialize a git repository at `path`. Otherwise, `Driver`
+        will attempt to clone the repository pointed to by `upstream` into `path`.
 
         Take care to pass in an appropriately configured `remote_callbacks values to ensure there are no issues when
         cloning the repositories.
 
-        todo: do not differentiate between ssh and https
-
         :param repo_path: The path to an existing repository where git operations will take place.
-        :param https: The https clone url for the repository.
-        :param ssh: The ssh clone url for the repository.
+        :param upstream: The url to a cloneable upstream repository.
+        :param clone_callbacks: The callbacks to provide when cloning a repo.
+        :param push_callbacks: The callbacks to provide when pushing to a repo.
         """
         self.__push_callbacks = push_callbacks
 
-        if ssh is not None:
+        if upstream is not None:
             self.__repo: Repository = pygit2.clone_repository(
-                ssh, repo_path, callbacks=clone_callbacks
-            )
-        elif https is not None:
-            self.__repo: Repository = pygit2.clone_repository(
-                https, repo_path, callbacks=clone_callbacks
+                upstream, repo_path, callbacks=clone_callbacks,
             )
         else:
             self.__repo: Repository = pygit2.init_repository(repo_path)
