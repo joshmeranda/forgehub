@@ -31,14 +31,19 @@ def __parse_args() -> Namespace:
     )
     parser.add_argument(
         "repo",
-        help="the path to an existing repo or where the repository should be cloned to",
+        help="either a path to a locally cloned repo, or the url to an upstream repository"
     )
 
-    parser.add_argument(
-        "-u",
-        "--upstream-url",
-        help="the ssh or https upstream url for the repository, expects input identical to what github provides",
-    )
+    # parser.add_argument(
+    #     "repo",
+    #     help="the path to an existing repo or where the repository should be cloned to",
+    # )
+
+    # parser.add_argument(
+    #     "-u",
+    #     "--upstream-url",
+    #     help="the ssh or https upstream url for the repository, expects input identical to what github provides",
+    # )
 
     parser.add_argument(
         "-d",
@@ -49,7 +54,10 @@ def __parse_args() -> Namespace:
 
     parser.add_argument(
         "--user",
-        help="the name of the target user, if not specified the user is determined by either the user associated with the passed token or the git system / global configs",
+        help=(
+            "the name of the target user, if not specified the user is determined by"
+            "either the user associated with the passed token or the git system / global configs"
+        ),
     )
 
     ssh_group = parser.add_argument_group(
@@ -57,11 +65,11 @@ def __parse_args() -> Namespace:
     )
     ssh_group.add_argument(
         "--public",
-        help="the public ssh key to use when authenticating for clone and push operations, if not specified forgehub will look for `~/.ssh/id_rsa.pub`",
+        help="the file path of the public ssh key to for ssh operations, `~/.ssh/id_rsa.pub` if not specified",
     )
     ssh_group.add_argument(
         "--private",
-        help="the private ssh key to use when authenticating for clone and push operations, if not specified forgehub will look for `~/.ssh/id_rsa`",
+        help="the file path of the private ssh key to for ssh operations, `~/.ssh/id_rsa.pub` if not specified",
     )
 
     # not required since we can still perform github queries using public only information
@@ -134,6 +142,10 @@ def __get_ssh_keys(namespace: Namespace) -> (str, str):
     return private, public
 
 
+def __repo_name_from_url(url: str) -> str:
+    return url.split("/")[-1].split(".")[0]
+
+
 def main():
     namespace = __parse_args()
 
@@ -158,12 +170,19 @@ def main():
 
     print("initializing repository...")
     private, public = __get_ssh_keys(namespace)
-    url = namespace.url
+    repo = namespace.repo
+
+    if os.path.exists(repo):
+        repo_path = repo
+        repo_upstream = None
+    else:
+        repo_path = __repo_name_from_url(repo)
+        repo_upstream = repo
 
     callbacks = SshRemoteCallbacks(private, public)
     try:
         driver = Driver(
-            namespace.repo, ssh=url, clone_callbacks=callbacks, push_callbacks=callbacks
+            repo_path, repo_upstream, callbacks, callbacks
         )
     except Exception as err:
         print(f"error initializing repository: {err}")
