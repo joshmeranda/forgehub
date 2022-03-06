@@ -2,45 +2,179 @@ from forgehub.events import *
 from forgehub.git import *
 from forgehub.render import *
 
+from argparse import ArgumentParser, FileType, Namespace
 import os
+import sys
+from typing import Optional, Union
 
-from github import Github
+from github import AuthenticatedUser, Github, GithubException, NamedUser
+import pygit2
+
+GithubUser = Union[NamedUser.NamedUser, AuthenticatedUser.AuthenticatedUser]
+
+
+def __parse_args() -> Namespace:
+    # todo: no-push
+    # todo: allow for cleanup (removing cloned repo when done)
+    # todo: create a new repository rather than using an existing repo
+    # todo: dump data level maps to file
+    # todo: import data level map from file
+    # todo: merge repo and url (init if exists, clone if it does not)
+    parser = ArgumentParser(
+        prog="forgehub",
+        description="Abuse the github activity calendar to draw patterns or write messages",
+        add_help=True,
+    )
+
+    parser.add_argument(
+        "text", help="the text that should be displayed on the github activity calendar"
+    )
+    parser.add_argument(
+        "repo",
+        help="the path to an existing repo or where the repository should be cloned to",
+    )
+
+    parser.add_argument(
+        "-u",
+        "--upstream-url",
+        help="the ssh or https upstream url for the repository, expects input identical to what github provides",
+    )
+
+    parser.add_argument(
+        "-d",
+        "--dilute",
+        action="store_true",
+        help="specify to dilute existing activity by generating even more commits",
+    )
+
+    parser.add_argument(
+        "--user",
+        help="the name of the target user, if not specified the user is determined by either the user associated with the passed token or the git system / global configs",
+    )
+
+    ssh_group = parser.add_argument_group(
+        title="ssh", description="values to use when communicating with github over ssh"
+    )
+    ssh_group.add_argument(
+        "--public",
+        help="the public ssh key to use when authenticating for clone and push operations, if not specified forgehub will look for `~/.ssh/id_rsa.pub`",
+    )
+    ssh_group.add_argument(
+        "--private",
+        help="the private ssh key to use when authenticating for clone and push operations, if not specified forgehub will look for `~/.ssh/id_rsa`",
+    )
+
+    # not required since we can still perform github queries using public only information
+    token_group = parser.add_mutually_exclusive_group()
+    token_group.add_argument(
+        "-t", "--token", help="use the given value as the authenticated access token"
+    )
+    token_group.add_argument(
+        "-f",
+        "--token-file",
+        type=FileType("r"),
+        help="read the token from the given file",
+    )
+
+    return parser.parse_args()
+
+
+def __get_token(namespace: Namespace) -> Optional[str]:
+    if namespace.token is not None:
+        return namespace.token
+
+    if namespace.token_file is not None:
+        return namespace.token_file.readline().rstrip("\n")
+
+    return None
+
+
+def __get_user(namespace: Namespace) -> Optional[GithubUser]:
+    token = __get_token(namespace)
+
+    # todo: we should probably ask the user for username and password if not given (--login / --no-login /
+    #       --interactive?) rather than just carrying on with an unauthenticated client
+    if token is not None:
+        github_client = Github(login_or_token=token)
+    else:
+        github_client = Github()
+
+    if namespace.user is not None:
+        return github_client.get_user(namespace.user)
+
+    if token is not None:
+        # return the authenticated user
+        return github_client.get_user()
+
+    # return from system / global config
+    try:
+        return pygit2.Config()["core.user"]
+    except GithubException:
+        return None
+
+
+def __get_ssh_keys(namespace: Namespace) -> (str, str):
+    """Retrieve the public key, and private key files.
+
+    :param namespace: The namespace of command line arguments.
+    :return: The paths to the private key, and the public key
+    """
+    home = os.getenv("HOME")
+
+    if namespace.private is None:
+        private = os.path.join(home, ".ssh", "id_rsa")
+    else:
+        private = namespace.private
+
+    if namespace.public is None:
+        public = os.path.join(home, ".ssh", "id_rsa.pub")
+    else:
+        public = namespace.public
+
+    return private, public
 
 
 def main():
-    with open("token") as token_file:
-        token = token_file.readline()[:-1]
+    namespace = __parse_args()
 
-    github_client = Github(login_or_token=token)
-    github_user = github_client.get_user("joshmeranda")
+    try:
+        user = __get_user(namespace)
+    except GithubException as err:
+        print(f"an error occurred trying fetch github user: {err}")
+        sys.exit(1)
+
+    if user is None:
+        print("no user could be determined from arguments or environment")
+        sys.exit(1)
+
+    print(f"retrieving activity for user '{user}'...")
+    _, max_events_per_day = events.get_max_events_per_day(user)
+    boundaries = events.get_data_level_boundaries(max_events_per_day, namespace.dilute)
 
     print("rendering output...")
-    renderer = render.TextRenderer()
-    raw_data_level_map = renderer.render("BOOCHIE")
-
-    print("retrieving user activity stats...")
-    _, max_events_per_day = events.get_max_events_per_day(github_user)
-    boundaries = events.get_data_level_boundaries(max_events_per_day, dilute=True)
-
+    renderer = TextRenderer()
+    raw_data_level_map = renderer.render(namespace.text)
     scaled_data_level_map = render.scale_data_level_map(boundaries, raw_data_level_map)
 
-    home = os.getenv("HOME")
-    private = os.path.join(home, ".ssh", "id_rsa")
-    public = os.path.join(home, ".ssh", "id_rsa.pub")
+    print("initializing repository...")
+    private, public = __get_ssh_keys(namespace)
+    url = namespace.url
 
-    print("crafting commits...")
+    callbacks = SshRemoteCallbacks(private, public)
     try:
         driver = Driver(
-            "forgehub-test",
-            ssh="git@github.com:joshmeranda/forgehub-test.git",
-            clone_callbacks=SshRemoteCallbacks(private, public),
-            push_callbacks=SshRemoteCallbacks(private, public),
+            namespace.repo, ssh=url, clone_callbacks=callbacks, push_callbacks=callbacks
         )
     except Exception as err:
         print(f"error initializing repository: {err}")
-        return
+        sys.exit(2)
 
+    print("crafting commits...")
     driver.forge_commits(scaled_data_level_map)
 
-    print("pushing to remote...")
-    driver.push()
+    print("pushing to upstream...")
+    try:
+        driver.push()
+    except Exception as err:
+        print(f"error pushing to upstream: {err}")
+        sys.exit(2)
