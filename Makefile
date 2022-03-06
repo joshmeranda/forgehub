@@ -1,7 +1,7 @@
 .PHONY: fmt
 
 fmt:
-	black .
+	black tools forgehub
 
 build:
 	flit build
