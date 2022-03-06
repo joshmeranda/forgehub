@@ -1,0 +1,2 @@
+PyGithub == 1.55
+pygit2 == 1.9.0
