@@ -14,12 +14,9 @@ GithubUser = Union[NamedUser.NamedUser, AuthenticatedUser.AuthenticatedUser]
 
 
 def __parse_args() -> Namespace:
-    # todo: no-push
-    # todo: allow for cleanup (removing cloned repo when done)
     # todo: create a new repository rather than using an existing repo
     # todo: dump data level maps to file
     # todo: import data level map from file
-    # todo: merge repo and url (init if exists, clone if it does not)
     parser = ArgumentParser(
         prog="forgehub",
         description="Abuse the github activity calendar to draw patterns or write messages",
@@ -31,19 +28,8 @@ def __parse_args() -> Namespace:
     )
     parser.add_argument(
         "repo",
-        help="either a path to a locally cloned repo, or the url to an upstream repository"
+        help="either a path to a locally cloned repo, or the url to an upstream repository",
     )
-
-    # parser.add_argument(
-    #     "repo",
-    #     help="the path to an existing repo or where the repository should be cloned to",
-    # )
-
-    # parser.add_argument(
-    #     "-u",
-    #     "--upstream-url",
-    #     help="the ssh or https upstream url for the repository, expects input identical to what github provides",
-    # )
 
     parser.add_argument(
         "-d",
@@ -82,6 +68,19 @@ def __parse_args() -> Namespace:
         "--token-file",
         type=FileType("r"),
         help="read the token from the given file",
+    )
+
+    behavior_group = parser.add_argument_group()
+    behavior_group.add_argument(
+        "--no-clean",
+        action="store_true",
+        help="do not remove any cloned repositories after commits are pushed",
+    )
+    behavior_group.add_argument(
+        "-n",
+        "--no-push",
+        action="store_true",
+        help="do not push the crafted commits automatically (implies (--no-clean)",
     )
 
     return parser.parse_args()
@@ -152,7 +151,7 @@ def main():
     try:
         user = __get_user(namespace)
     except GithubException as err:
-        print(f"an error occurred trying fetch github user: {err}")
+        print(f"an error occurred fetching github user: {err}")
         sys.exit(1)
 
     if user is None:
@@ -180,20 +179,21 @@ def main():
         repo_upstream = repo
 
     callbacks = SshRemoteCallbacks(private, public)
+
     try:
-        driver = Driver(
-            repo_path, repo_upstream, callbacks, callbacks
-        )
-    except Exception as err:
+        with Driver(repo_path, repo_upstream, callbacks, callbacks) as driver:
+            print("crafting commits...")
+            driver.forge_commits(scaled_data_level_map)
+
+            if not namespace.no_push:
+                print("pushing to upstream...")
+                driver.push()
+    except DriverInitError as err:
         print(f"error initializing repository: {err}")
         sys.exit(2)
-
-    print("crafting commits...")
-    driver.forge_commits(scaled_data_level_map)
-
-    print("pushing to upstream...")
-    try:
-        driver.push()
-    except Exception as err:
+    except DriverForgeError as err:
+        print(f"error forging commits: {err}")
+        sys.exit(3)
+    except DriverPushError as err:
         print(f"error pushing to upstream: {err}")
-        sys.exit(2)
+        sys.exit(4)
