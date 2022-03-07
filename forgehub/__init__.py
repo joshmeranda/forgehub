@@ -23,22 +23,32 @@ def __parse_args() -> Namespace:
         add_help=True,
     )
 
-    parser.add_argument(
+    # # # # # # # # # # # # # # # # # #
+    # subcommand write                #
+    # # # # # # # # # # # # # # # # # #
+
+    subparsers = parser.add_subparsers(required=True)
+
+    write_parser = subparsers.add_parser(
+        "write", help="write text to your github activity calendar"
+    )
+
+    write_parser.add_argument(
         "text", help="the text that should be displayed on the github activity calendar"
     )
-    parser.add_argument(
+    write_parser.add_argument(
         "repo",
         help="either a path to a locally cloned repo, or the url to an upstream repository",
     )
 
-    parser.add_argument(
+    write_parser.add_argument(
         "-d",
         "--dilute",
         action="store_true",
         help="specify to dilute existing activity by generating even more commits",
     )
 
-    parser.add_argument(
+    write_parser.add_argument(
         "--user",
         help=(
             "the name of the target user, if not specified the user is determined by"
@@ -46,7 +56,7 @@ def __parse_args() -> Namespace:
         ),
     )
 
-    ssh_group = parser.add_argument_group(
+    ssh_group = write_parser.add_argument_group(
         title="ssh", description="values to use when communicating with github over ssh"
     )
     ssh_group.add_argument(
@@ -59,7 +69,7 @@ def __parse_args() -> Namespace:
     )
 
     # not required since we can still perform github queries using public only information
-    token_group = parser.add_mutually_exclusive_group()
+    token_group = write_parser.add_mutually_exclusive_group()
     token_group.add_argument(
         "-t", "--token", help="use the given value as the authenticated access token"
     )
@@ -70,7 +80,7 @@ def __parse_args() -> Namespace:
         help="read the token from the given file",
     )
 
-    behavior_group = parser.add_argument_group()
+    behavior_group = write_parser.add_argument_group()
     behavior_group.add_argument(
         "--no-clean",
         action="store_true",
