@@ -23,11 +23,11 @@ def __parse_args() -> Namespace:
         add_help=True,
     )
 
+    subparsers = parser.add_subparsers(dest="subcommand", required=True)
+
     # # # # # # # # # # # # # # # # # #
     # subcommand write                #
     # # # # # # # # # # # # # # # # # #
-
-    subparsers = parser.add_subparsers(required=True)
 
     write_parser = subparsers.add_parser(
         "write", help="write text to your github activity calendar"
@@ -93,7 +93,23 @@ def __parse_args() -> Namespace:
         help="do not push the crafted commits automatically (implies (--no-clean)",
     )
 
-    return parser.parse_args()
+    # # # # # # # # # # # # # # # # # #
+    # subcommand dump                 #
+    # # # # # # # # # # # # # # # # # #
+
+    dump_parser = subparsers.add_parser(
+        "dump", help="dump the DataLevelMap for the given data to a file, or stdout"
+    )
+
+    dump_parser.add_argument("text", help="the text to be rendered and dumped")
+    dump_parser.add_argument(
+        "-o", "--out", type=FileType("w"), help="the output file for the DataLevelMap"
+    )
+    dump_parser.add_argument(
+        "-i", "--include-dates", action="store_true", help="include dates in output"
+    )
+
+    return parser.parse_args(["dump", "-o", "out", "B"])
 
 
 def __get_token(namespace: Namespace) -> Optional[str]:
@@ -155,18 +171,16 @@ def __repo_name_from_url(url: str) -> str:
     return url.split("/")[-1].split(".")[0]
 
 
-def main():
-    namespace = __parse_args()
-
+def __write(namespace: Namespace) -> int:
     try:
         user = __get_user(namespace)
     except GithubException as err:
         print(f"an error occurred fetching github user: {err}")
-        sys.exit(1)
+        return 1
 
     if user is None:
         print("no user could be determined from arguments or environment")
-        sys.exit(1)
+        return 1
 
     print(f"retrieving activity for user '{user}'...")
     _, max_events_per_day = events.get_max_events_per_day(user)
@@ -174,7 +188,7 @@ def main():
 
     print("rendering output...")
     renderer = TextRenderer()
-    raw_data_level_map = renderer.render(namespace.text)
+    raw_data_level_map = renderer.render(namespace.text.upper())
     scaled_data_level_map = render.scale_data_level_map(boundaries, raw_data_level_map)
 
     print("initializing repository...")
@@ -200,10 +214,67 @@ def main():
                 driver.push()
     except DriverInitError as err:
         print(f"error initializing repository: {err}")
-        sys.exit(2)
+        return 2
     except DriverForgeError as err:
         print(f"error forging commits: {err}")
-        sys.exit(3)
+        return 3
     except DriverPushError as err:
         print(f"error pushing to upstream: {err}")
-        sys.exit(4)
+        return 4
+
+    return 0
+
+
+def __dump(namespace: Namespace) -> int:
+    renderer = render.TextRenderer()
+    raw_data_level_map = renderer.render(namespace.text.upper())
+
+    if namespace.out is None:
+        out_file = sys.stdout
+    else:
+        out_file = namespace.out
+
+    try:
+        if namespace.include_dates:
+            out_file.write(
+                "\n".join(
+                    map(
+                        lambda pair: f"{pair[0].strftime('%Y.%m.%d')}:{pair[1]}",
+                        raw_data_level_map.items(),
+                    )
+                )
+            )
+        else:
+            # sort the data levels by date and write to output
+            out_file.write(
+                "".join(
+                    [
+                        str(i[1])
+                        for i in sorted(
+                            raw_data_level_map.items(), key=lambda i: i[0], reverse=True
+                        )
+                    ]
+                )
+            )
+    except IOError as err:
+        print(f"could not write to output: {err}")
+        return 1
+
+    if namespace.out is not None:
+        out_file.close()
+
+    return 0
+
+
+def main():
+    namespace = __parse_args()
+
+    match namespace.subcommand:
+        case "write":
+            exit_code = __write(namespace)
+        case "dump":
+            exit_code = __dump(namespace)
+        case _:
+            exit_code = 5
+
+    sys.exit(exit_code)
