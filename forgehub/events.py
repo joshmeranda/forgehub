@@ -5,6 +5,12 @@ from enum import Enum
 import github
 from github import Event, NamedUser
 
+__all__ = [
+    "DataLevelBoundaries",
+    "get_max_events_per_day",
+    "get_data_level_boundaries",
+]
+
 DataLevelBoundaries = (int, int, int, int, int)
 
 

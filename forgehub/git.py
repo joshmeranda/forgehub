@@ -2,6 +2,7 @@ from forgehub.render import DataLevelMap
 
 from typing import Optional
 from os import path
+import shutil
 import subprocess
 
 import pygit2
@@ -14,6 +15,15 @@ from pygit2 import (
     Signature,
     Username,
 )
+
+__all__ = [
+    "SshRemoteCallbacks",
+    "DriverError",
+    "DriverInitError",
+    "DriverForgeError",
+    "DriverPushError",
+    "Driver",
+]
 
 
 class SshRemoteCallbacks(RemoteCallbacks):
@@ -33,6 +43,22 @@ class SshRemoteCallbacks(RemoteCallbacks):
             return None
 
 
+class DriverError(Exception):
+    """A base error class for other driver related errors."""
+
+
+class DriverInitError(DriverError):
+    """An error for any issue with driver initialization."""
+
+
+class DriverForgeError(DriverError):
+    """An error for any issue related to forging commits."""
+
+
+class DriverPushError(DriverError):
+    """An error for any issue related to pushing to a remote."""
+
+
 class Driver:
     __GIT_CONFIG_USER_NAME: str = "user.name"
     __GIT_CONFIG_USER_EMAIL: str = "user.email"
@@ -41,37 +67,57 @@ class Driver:
     def __init__(
         self,
         repo_path: str,
-        https: Optional[str] = None,
-        ssh: Optional[str] = None,
+        upstream: Optional[str] = None,
         clone_callbacks: Optional[RemoteCallbacks] = None,
         push_callbacks: Optional[RemoteCallbacks] = None,
+        cleanup: bool = True,
     ):
-        """Driver is a wrapper around all git operations.
+        """A wrapper around all git repository operations.
 
-        If neither `https` not `ssh` are specified, `Driver` will attempt to initialize a git repository at that path.
-        Otherwise, `Driver` will attempt to clone the repository into `path` using the appropriate protocol. If both are
-        specified, `https` will be ignored in favor of `ssh`.
+        if `upstream` is `None`, `Driver` will attempt to initialize a git repository at `path`. Otherwise, `Driver`
+        will attempt to clone the repository pointed to by `upstream` into `path`.
 
-        Take care to pass in an appropriately configured `remote_callbacks values to ensure there are no issues when cloning the repositories.
+        Take care to pass in an appropriately configured `remote_callbacks values to ensure there are no issues when
+        cloning the repositories.
+
+        todo: we'll need to create the parents of `repo_path`
 
         :param repo_path: The path to an existing repository where git operations will take place.
-        :param https: The https clone url for the repository.
-        :param ssh: The ssh clone url for the repository.
-
-        https://www.pygit2.org/recipes.html#main-porcelain-commands
+        :param upstream: The url to a cloneable upstream repository.
+        :param clone_callbacks: The callbacks to provide when cloning a repo.
+        :param push_callbacks: The callbacks to provide when pushing to a repo.
+        :param cleanup: Whether or not a cloned repository should be removed when the driver context is left.
         """
+
+        self.__repo_path = repo_path
+        self.__upstream = upstream
+
         self.__push_callbacks = push_callbacks
 
-        if ssh is not None:
-            self.__repo: Repository = pygit2.clone_repository(
-                ssh, repo_path, callbacks=clone_callbacks
-            )
-        elif https is not None:
-            self.__repo: Repository = pygit2.clone_repository(
-                https, repo_path, callbacks=clone_callbacks
-            )
-        else:
-            self.__repo: Repository = pygit2.init_repository(repo_path)
+        self.__cleanup = cleanup
+
+        try:
+            if upstream is not None:
+                self.__repo: Repository = pygit2.clone_repository(
+                    upstream,
+                    repo_path,
+                    callbacks=clone_callbacks,
+                )
+            else:
+                self.__repo: Repository = pygit2.init_repository(repo_path)
+        except Exception as err:
+            raise DriverInitError(err)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        should_cleanup = exc_type is not None
+
+        # we only want to remove the repo path if the driver was configured to clean up the repo, the repo was cloned,
+        # and no exception was received by the driver's exit
+        if should_cleanup and self.__cleanup and self.__upstream is not None:
+            shutil.rmtree(self.__repo_path)
 
     def forge_commits(self, commits_per_day: DataLevelMap):
         """Given a `DataLevelMap` mapping dates to the real amount of commit to be made.
@@ -86,7 +132,7 @@ class Driver:
                 config[Driver.__GIT_CONFIG_USER_EMAIL],
             )
         except ValueError:
-            raise ValueError(
+            raise DriverForgeError(
                 "could not determine author from repository, system, or global config"
             )
 
@@ -99,24 +145,30 @@ class Driver:
                 message = f"commit #{i + 1} for {date.date()}"
 
                 with open(mutating_file, "w") as file:
-                    file.write(message)
+                    try:
+                        file.write(message)
+                    except IOError as err:
+                        raise DriverForgeError(err)
 
                 try:
                     ref = self.__repo.head.name
                     parents = [self.__repo.head.target]
-                except GitError as err:
+                except GitError:
                     ref = "HEAD"
                     parents = []
 
-                index = self.__repo.index
-                index.add(Driver.__MUTATING_FILE_NAME)
-                index.write()
+                try:
+                    index = self.__repo.index
+                    index.add(Driver.__MUTATING_FILE_NAME)
+                    index.write()
 
-                tree = index.write_tree()
+                    tree = index.write_tree()
 
-                self.__repo.create_commit(
-                    ref, signature, signature, message, tree, parents
-                )
+                    self.__repo.create_commit(
+                        ref, signature, signature, message, tree, parents
+                    )
+                except GitError as err:
+                    raise DriverForgeError(err)
 
                 # change the commit date
                 # todo: ideally we would not spawn a subprocess every time to change the commit date
@@ -130,14 +182,19 @@ class Driver:
     def push(self, remote_name: str = "origin"):
         """Push to the remote with the given name.
 
+        If an error occurs while pushing, an internal flag will be set and a cloned repository will not be removed when
+        the `Driver` context is left.
+
         :param remote_name: The name of the target origin.
         """
         try:
             remote = self.__repo.remotes[remote_name]
+
+            # todo: we should accept this from user, or determine the default branch name
+            remote.push(["refs/heads/main"], callbacks=self.__push_callbacks)
         except KeyError:
-            return ValueError(
+            raise DriverPushError(
                 f"no such remote '{remote_name}' exists for the given repo"
             )
-
-        # todo: we should accept this from user, or determine the default branch name
-        remote.push(["refs/heads/main"], callbacks=self.__push_callbacks)
+        except GitError as err:
+            raise DriverPushError(err)
