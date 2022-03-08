@@ -11,9 +11,6 @@ __all__ = [
     "TextRenderer",
 ]
 
-# """Provides a type alias for a mapping between dates and the associated activity level."""
-# DataLevelMap = dict[datetime, int]
-
 
 class DataLevelMap:
     def __init__(self):

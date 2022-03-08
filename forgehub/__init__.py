@@ -1,3 +1,5 @@
+import datetime
+
 from forgehub.events import *
 from forgehub.git import *
 from forgehub.render import *
@@ -15,7 +17,6 @@ GithubUser = Union[NamedUser.NamedUser, AuthenticatedUser.AuthenticatedUser]
 
 def __parse_args() -> Namespace:
     # todo: create a new repository rather than using an existing repo
-    # todo: import data level map from fsile
     parser = ArgumentParser(
         prog="forgehub",
         description="Abuse the github activity calendar to draw patterns or write messages",
@@ -50,6 +51,17 @@ def __parse_args() -> Namespace:
             "the name of the target user, if not specified the user is determined by"
             "either the user associated with the passed token or the git system / global configs"
         ),
+    )
+
+    source_group = write_parser.add_mutually_exclusive_group()
+    source_group.add_argument(
+        "text", nargs="?", help="the text that should be displayed on the github activity calendar"
+    )
+    source_group.add_argument(
+        "-l",
+        "--load",
+        type=FileType("r"),
+        help="load an unscaled data level map from the given file",
     )
 
     ssh_group = write_parser.add_argument_group(
@@ -167,7 +179,40 @@ def __repo_name_from_url(url: str) -> str:
     return url.split("/")[-1].split(".")[0]
 
 
+def __parse_data_level_map_from_file(file) -> DataLevelMap:
+    content: str = file.read().strip()
+
+    if content.isdigit():
+        data_levels = list(map(int, content.split()))
+
+        renderer = TextRenderer()
+        data_level_map = renderer.render_data_levels(data_levels)
+    else:
+        data_level_map = DataLevelMap()
+
+        for line in content.splitlines():
+            date, data_level = line.split(":")
+            date = datetime.datetime.strptime(date, "%Y.%m.%d")
+
+            data_level_map[date] = data_level
+
+    return data_level_map
+
+
 def __write(namespace: Namespace) -> int:
+    print("rendering output...")
+    if namespace.load is not None:
+        try:
+            data_level_map = __parse_data_level_map_from_file(namespace.load)
+        except Exception as err:
+            print(f"could not load DataLevelMap from file: {err}")
+            return 1
+    else:
+        text = namespace.text if namespace.text is not None else input()
+
+        renderer = TextRenderer()
+        data_level_map = renderer.render(text.upper())
+
     try:
         user = __get_user(namespace)
     except GithubException as err:
@@ -181,11 +226,6 @@ def __write(namespace: Namespace) -> int:
     print(f"retrieving activity for user '{user}'...")
     _, max_events_per_day = events.get_max_events_per_day(user)
     boundaries = events.get_data_level_boundaries(max_events_per_day, namespace.dilute)
-
-    print("rendering output...")
-    renderer = TextRenderer()
-    data_level_map = renderer.render(namespace.text.upper())
-    data_level_map.scale_to_boundaries(boundaries)
 
     print("initializing repository...")
     private, public = __get_ssh_keys(namespace)
@@ -205,9 +245,9 @@ def __write(namespace: Namespace) -> int:
             print("crafting commits...")
             driver.forge_commits(data_level_map)
 
-            # if not namespace.no_push:
-            #     print("pushing to upstream...")
-            #     driver.push()
+            if not namespace.no_push:
+                print("pushing to upstream...")
+                driver.push()
     except DriverInitError as err:
         print(f"error initializing repository: {err}")
         return 2
