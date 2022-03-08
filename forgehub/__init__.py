@@ -15,8 +15,7 @@ GithubUser = Union[NamedUser.NamedUser, AuthenticatedUser.AuthenticatedUser]
 
 def __parse_args() -> Namespace:
     # todo: create a new repository rather than using an existing repo
-    # todo: dump data level maps to file
-    # todo: import data level map from file
+    # todo: import data level map from fsile
     parser = ArgumentParser(
         prog="forgehub",
         description="Abuse the github activity calendar to draw patterns or write messages",
@@ -33,9 +32,6 @@ def __parse_args() -> Namespace:
         "write", help="write text to your github activity calendar"
     )
 
-    write_parser.add_argument(
-        "text", help="the text that should be displayed on the github activity calendar"
-    )
     write_parser.add_argument(
         "repo",
         help="either a path to a locally cloned repo, or the url to an upstream repository",
@@ -74,7 +70,7 @@ def __parse_args() -> Namespace:
         "-t", "--token", help="use the given value as the authenticated access token"
     )
     token_group.add_argument(
-        "-f",
+        "-F",
         "--token-file",
         type=FileType("r"),
         help="read the token from the given file",
@@ -109,7 +105,7 @@ def __parse_args() -> Namespace:
         "-i", "--include-dates", action="store_true", help="include dates in output"
     )
 
-    return parser.parse_args(["dump", "-o", "out", "B"])
+    return parser.parse_args()
 
 
 def __get_token(namespace: Namespace) -> Optional[str]:
@@ -188,8 +184,8 @@ def __write(namespace: Namespace) -> int:
 
     print("rendering output...")
     renderer = TextRenderer()
-    raw_data_level_map = renderer.render(namespace.text.upper())
-    scaled_data_level_map = render.scale_data_level_map(boundaries, raw_data_level_map)
+    data_level_map = renderer.render(namespace.text.upper())
+    data_level_map.scale_to_boundaries(boundaries)
 
     print("initializing repository...")
     private, public = __get_ssh_keys(namespace)
@@ -207,11 +203,11 @@ def __write(namespace: Namespace) -> int:
     try:
         with Driver(repo_path, repo_upstream, callbacks, callbacks) as driver:
             print("crafting commits...")
-            driver.forge_commits(scaled_data_level_map)
+            driver.forge_commits(data_level_map)
 
-            if not namespace.no_push:
-                print("pushing to upstream...")
-                driver.push()
+            # if not namespace.no_push:
+            #     print("pushing to upstream...")
+            #     driver.push()
     except DriverInitError as err:
         print(f"error initializing repository: {err}")
         return 2
