@@ -1,3 +1,5 @@
+import datetime
+
 from forgehub.events import *
 from forgehub.git import *
 from forgehub.render import *
@@ -15,30 +17,35 @@ GithubUser = Union[NamedUser.NamedUser, AuthenticatedUser.AuthenticatedUser]
 
 def __parse_args() -> Namespace:
     # todo: create a new repository rather than using an existing repo
-    # todo: dump data level maps to file
-    # todo: import data level map from file
     parser = ArgumentParser(
         prog="forgehub",
         description="Abuse the github activity calendar to draw patterns or write messages",
         add_help=True,
     )
 
-    parser.add_argument(
-        "text", help="the text that should be displayed on the github activity calendar"
+    subparsers = parser.add_subparsers(dest="subcommand", required=True)
+
+    # # # # # # # # # # # # # # # # # #
+    # subcommand write                #
+    # # # # # # # # # # # # # # # # # #
+
+    write_parser = subparsers.add_parser(
+        "write", help="write text to your github activity calendar"
     )
-    parser.add_argument(
+
+    write_parser.add_argument(
         "repo",
         help="either a path to a locally cloned repo, or the url to an upstream repository",
     )
 
-    parser.add_argument(
+    write_parser.add_argument(
         "-d",
         "--dilute",
         action="store_true",
         help="specify to dilute existing activity by generating even more commits",
     )
 
-    parser.add_argument(
+    write_parser.add_argument(
         "--user",
         help=(
             "the name of the target user, if not specified the user is determined by"
@@ -46,7 +53,18 @@ def __parse_args() -> Namespace:
         ),
     )
 
-    ssh_group = parser.add_argument_group(
+    source_group = write_parser.add_mutually_exclusive_group()
+    source_group.add_argument(
+        "text", nargs="?", help="the text that should be displayed on the github activity calendar"
+    )
+    source_group.add_argument(
+        "-l",
+        "--load",
+        type=FileType("r"),
+        help="load an unscaled data level map from the given file",
+    )
+
+    ssh_group = write_parser.add_argument_group(
         title="ssh", description="values to use when communicating with github over ssh"
     )
     ssh_group.add_argument(
@@ -59,18 +77,18 @@ def __parse_args() -> Namespace:
     )
 
     # not required since we can still perform github queries using public only information
-    token_group = parser.add_mutually_exclusive_group()
+    token_group = write_parser.add_mutually_exclusive_group()
     token_group.add_argument(
         "-t", "--token", help="use the given value as the authenticated access token"
     )
     token_group.add_argument(
-        "-f",
+        "-F",
         "--token-file",
         type=FileType("r"),
         help="read the token from the given file",
     )
 
-    behavior_group = parser.add_argument_group()
+    behavior_group = write_parser.add_argument_group()
     behavior_group.add_argument(
         "--no-clean",
         action="store_true",
@@ -81,6 +99,22 @@ def __parse_args() -> Namespace:
         "--no-push",
         action="store_true",
         help="do not push the crafted commits automatically (implies (--no-clean)",
+    )
+
+    # # # # # # # # # # # # # # # # # #
+    # subcommand dump                 #
+    # # # # # # # # # # # # # # # # # #
+
+    dump_parser = subparsers.add_parser(
+        "dump", help="dump the DataLevelMap for the given data to a file, or stdout"
+    )
+
+    dump_parser.add_argument("text", help="the text to be rendered and dumped")
+    dump_parser.add_argument(
+        "-o", "--out", type=FileType("w"), help="the output file for the DataLevelMap"
+    )
+    dump_parser.add_argument(
+        "-i", "--include-dates", action="store_true", help="include dates in output"
     )
 
     return parser.parse_args()
@@ -145,27 +179,53 @@ def __repo_name_from_url(url: str) -> str:
     return url.split("/")[-1].split(".")[0]
 
 
-def main():
-    namespace = __parse_args()
+def __parse_data_level_map_from_file(file) -> DataLevelMap:
+    content: str = file.read().strip()
+
+    if content.isdigit():
+        data_levels = list(map(int, content.split()))
+
+        renderer = TextRenderer()
+        data_level_map = renderer.render_data_levels(data_levels)
+    else:
+        data_level_map = DataLevelMap()
+
+        for line in content.splitlines():
+            date, data_level = line.split(":")
+            date = datetime.datetime.strptime(date, "%Y.%m.%d")
+
+            data_level_map[date] = data_level
+
+    return data_level_map
+
+
+def __write(namespace: Namespace) -> int:
+    print("rendering output...")
+    if namespace.load is not None:
+        try:
+            data_level_map = __parse_data_level_map_from_file(namespace.load)
+        except Exception as err:
+            print(f"could not load DataLevelMap from file: {err}")
+            return 1
+    else:
+        text = namespace.text if namespace.text is not None else input()
+
+        renderer = TextRenderer()
+        data_level_map = renderer.render(text.upper())
 
     try:
         user = __get_user(namespace)
     except GithubException as err:
         print(f"an error occurred fetching github user: {err}")
-        sys.exit(1)
+        return 1
 
     if user is None:
         print("no user could be determined from arguments or environment")
-        sys.exit(1)
+        return 1
 
     print(f"retrieving activity for user '{user}'...")
     _, max_events_per_day = events.get_max_events_per_day(user)
     boundaries = events.get_data_level_boundaries(max_events_per_day, namespace.dilute)
-
-    print("rendering output...")
-    renderer = TextRenderer()
-    raw_data_level_map = renderer.render(namespace.text)
-    scaled_data_level_map = render.scale_data_level_map(boundaries, raw_data_level_map)
 
     print("initializing repository...")
     private, public = __get_ssh_keys(namespace)
@@ -183,17 +243,74 @@ def main():
     try:
         with Driver(repo_path, repo_upstream, callbacks, callbacks) as driver:
             print("crafting commits...")
-            driver.forge_commits(scaled_data_level_map)
+            driver.forge_commits(data_level_map)
 
             if not namespace.no_push:
                 print("pushing to upstream...")
                 driver.push()
     except DriverInitError as err:
         print(f"error initializing repository: {err}")
-        sys.exit(2)
+        return 2
     except DriverForgeError as err:
         print(f"error forging commits: {err}")
-        sys.exit(3)
+        return 3
     except DriverPushError as err:
         print(f"error pushing to upstream: {err}")
-        sys.exit(4)
+        return 4
+
+    return 0
+
+
+def __dump(namespace: Namespace) -> int:
+    renderer = render.TextRenderer()
+    raw_data_level_map = renderer.render(namespace.text.upper())
+
+    if namespace.out is None:
+        out_file = sys.stdout
+    else:
+        out_file = namespace.out
+
+    try:
+        if namespace.include_dates:
+            out_file.write(
+                "\n".join(
+                    map(
+                        lambda pair: f"{pair[0].strftime('%Y.%m.%d')}:{pair[1]}",
+                        raw_data_level_map.items(),
+                    )
+                )
+            )
+        else:
+            # sort the data levels by date and write to output
+            out_file.write(
+                "".join(
+                    [
+                        str(i[1])
+                        for i in sorted(
+                            raw_data_level_map.items(), key=lambda i: i[0], reverse=True
+                        )
+                    ]
+                )
+            )
+    except IOError as err:
+        print(f"could not write to output: {err}")
+        return 1
+
+    if namespace.out is not None:
+        out_file.close()
+
+    return 0
+
+
+def main():
+    namespace = __parse_args()
+
+    match namespace.subcommand:
+        case "write":
+            exit_code = __write(namespace)
+        case "dump":
+            exit_code = __dump(namespace)
+        case _:
+            exit_code = 5
+
+    sys.exit(exit_code)
