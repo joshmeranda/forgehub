@@ -83,7 +83,7 @@ def __parse_args() -> Namespace:
         help="specify that the new repository should be public rather than private (be careful of your activity calendar's 'Private Contributions' setting)",
     )
     create_group.add_argument(
-        "--delete",
+        "-R", "--replace",
         action="store_true",
         help="if a repository already exists for the authenticated user, delete and replace it (use with caution)",
     )
@@ -92,12 +92,12 @@ def __parse_args() -> Namespace:
         title="ssh", description="values to use when communicating with github over ssh"
     )
     ssh_group.add_argument(
-        "--public",
+        "--public-key",
         help="the file path of the public ssh key to for ssh operations, `~/.ssh/id_rsa.pub` if not specified",
     )
     ssh_group.add_argument(
-        "--private",
-        help="the file path of the private ssh key to for ssh operations, `~/.ssh/id_rsa.pub` if not specified",
+        "--private-key",
+        help="the file path of the private ssh key to for ssh operations, `~/.ssh/id_rsa` if not specified",
     )
 
     # not required since we can still perform github queries using public only information
@@ -171,11 +171,22 @@ def __get_user(namespace: Namespace) -> Optional[GithubUser]:
         # return the authenticated user
         return github_client.get_user()
 
-    # return from system / global config
     try:
-        return pygit2.Config()["core.user"]
-    except GithubException:
-        return None
+        return github_client.get_user(pygit2.Config.get_system_config()["user.name"])
+    except (OSError, KeyError):
+        pass
+
+    try:
+        return github_client.get_user(pygit2.Config.get_xdg_config()["user.name"])
+    except (OSError, KeyError):
+        pass
+
+    try:
+        return github_client.get_user(pygit2.Config.get_global_config()["user.name"])
+    except (OSError, KeyError):
+        pass
+
+    return None
 
 
 def __get_ssh_keys(namespace: Namespace) -> (str, str):
@@ -186,15 +197,15 @@ def __get_ssh_keys(namespace: Namespace) -> (str, str):
     """
     home = os.getenv("HOME")
 
-    if namespace.private is None:
+    if namespace.private_key is None:
         private = os.path.join(home, ".ssh", "id_rsa")
     else:
-        private = namespace.private
+        private = namespace.private_key
 
-    if namespace.public is None:
+    if namespace.public_key is None:
         public = os.path.join(home, ".ssh", "id_rsa.pub")
     else:
-        public = namespace.public
+        public = namespace.public_key
 
     return private, public
 
@@ -247,7 +258,7 @@ def __write(namespace: Namespace) -> int:
         print("no user could be determined from arguments or environment")
         return 1
 
-    print(f"retrieving activity for user '{user}'...")
+    print(f"retrieving activity for user '{user.login}'...")
     _, max_events_per_day = events.get_max_events_per_day(user)
     boundaries = events.get_data_level_boundaries(max_events_per_day, namespace.dilute)
     data_level_map.scale_to_boundaries(boundaries)
@@ -272,11 +283,17 @@ def __write(namespace: Namespace) -> int:
                     print("to create a new repository you must provide a token")
                     return 5
 
-                driver.create(namespace.repo, user, callbacks, namespace.delete, namespace.private)
+                driver.create(namespace.repo, user, callbacks, namespace.replace, namespace.private)
             elif repo_upstream is not None:
                 driver.clone_into(repo_path, repo_upstream, callbacks)
             else:
                 driver.init_repo(repo_path)
+
+            print("forging commits...")
+            driver.forge_commits(data_level_map)
+
+            print("pushing to upstream...")
+            driver.push(push_callbacks=callbacks)
     except DriverInitError as err:
         print(f"error initializing repository: {err}")
         return 2
