@@ -1,9 +1,13 @@
+from github import GithubException
+
 from forgehub.render import DataLevelMap
 
-from typing import Optional
+from typing import Callable, Optional
 from os import path
 import shutil
 import subprocess
+
+from github.AuthenticatedUser import AuthenticatedUser
 
 import pygit2
 from pygit2 import (
@@ -22,7 +26,7 @@ __all__ = [
     "DriverInitError",
     "DriverForgeError",
     "DriverPushError",
-    "Driver",
+    "GitDriver",
 ]
 
 
@@ -59,65 +63,120 @@ class DriverPushError(DriverError):
     """An error for any issue related to pushing to a remote."""
 
 
-class Driver:
+def _did_repo_exist(data: dict) -> bool:
+    """Check if the data from a `GithubException` indicates the repository already existed"""
+    try:
+        error_messages = [error["message"] for error in data["errors"]]
+
+        return "name already exists on this account" in error_messages
+    except KeyError:
+        return False
+
+
+class GitDriver:
     __GIT_CONFIG_USER_NAME: str = "user.name"
     __GIT_CONFIG_USER_EMAIL: str = "user.email"
     __MUTATING_FILE_NAME: str = "repr.txt"
 
-    def __init__(
-        self,
-        repo_path: str,
-        upstream: Optional[str] = None,
-        clone_callbacks: Optional[RemoteCallbacks] = None,
-        push_callbacks: Optional[RemoteCallbacks] = None,
-        cleanup: bool = True,
-    ):
-        """A wrapper around all git repository operations.
+    def __init__(self, cleanup: bool = False):
+        """A wrapper around all git repository operations, providing a context manager for simple resource cleanup.
 
-        if `upstream` is `None`, `Driver` will attempt to initialize a git repository at `path`. Otherwise, `Driver`
-        will attempt to clone the repository pointed to by `upstream` into `path`.
+        Note: under normal conditions, when a `GitDriver`'s context is left and `cleanup` is `True`, any repositories
+        that were cloned into a local directory will be deleted; however, if an exception is raised within its context,
+        the cloned repositories will not be cleaned up.
 
-        Take care to pass in an appropriately configured `remote_callbacks values to ensure there are no issues when
-        cloning the repositories.
-
-        todo: we'll need to create the parents of `repo_path`
-
-        :param repo_path: The path to an existing repository where git operations will take place.
-        :param upstream: The url to a cloneable upstream repository.
-        :param clone_callbacks: The callbacks to provide when cloning a repo.
-        :param push_callbacks: The callbacks to provide when pushing to a repo.
-        :param cleanup: Whether or not a cloned repository should be removed when the driver context is left.
+        :param cleanup: Specifies that any cloned repositories should be deleted once the context is left.
         """
-
-        self.__repo_path = repo_path
-        self.__upstream = upstream
-
-        self.__push_callbacks = push_callbacks
-
         self.__cleanup = cleanup
+        self.__repo: Optional[Repository] = None
 
-        try:
-            if upstream is not None:
-                self.__repo: Repository = pygit2.clone_repository(
-                    upstream,
-                    repo_path,
-                    callbacks=clone_callbacks,
-                )
-            else:
-                self.__repo: Repository = pygit2.init_repository(repo_path)
-        except Exception as err:
-            raise DriverInitError(err)
+        # specifies that the repository pointed to by self.__repo was a local repository
+        # existing prior to this init method
+        self.__was_local_repo = False
 
     def __enter__(self):
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        should_cleanup = exc_type is not None
-
         # we only want to remove the repo path if the driver was configured to clean up the repo, the repo was cloned,
-        # and no exception was received by the driver's exit
-        if should_cleanup and self.__cleanup and self.__upstream is not None:
-            shutil.rmtree(self.__repo_path)
+        # and no exception was received by the driver's __exit__
+        if exc_type is None and self.__cleanup and not self.__was_local_repo:
+            shutil.rmtree(self.__repo.path)
+
+    def init_repo(self, repo_path: str):
+        """Initialize the driver's internal repository using the repository at the given path.
+
+        :param repo_path: The path to a local git repository.
+        """
+        try:
+            self.__repo = pygit2.init_repository(repo_path)
+            self.__was_local_repo = True
+        except GitError as err:
+            raise DriverInitError(
+                f"could not initialize repository at '{repo_path}': {err}"
+            )
+
+    def clone_into(
+        self,
+        repo_path: str,
+        upstream: str,
+        clone_callbacks: Optional[RemoteCallbacks] = None,
+    ):
+        """Clone an upstream repository to a local repository.
+
+        :param repo_path: The path to clone teh created repository into.
+        :param upstream: The upstream url for the repository to clone.
+        :param clone_callbacks: A RemoteCallbacks instance properly configured to clone over the upstream protocol.
+        """
+        try:
+            self.__repo = pygit2.clone_repository(
+                upstream, repo_path, callbacks=clone_callbacks
+            )
+        except GitError as err:
+            raise DriverInitError(
+                f"could not clone repository at '{upstream}' into '{repo_path}': {err}"
+            )
+
+    def create(
+        self,
+        name: str,
+        user: AuthenticatedUser,
+        clone_callbacks: Optional[RemoteCallbacks] = None,
+        delete_existing: bool = False,
+        private: bool = False,
+    ):
+        """Create a remote repository and clone to the local system.
+
+        :param name: The name of the new repository.
+        :param user: An authenticated GitHub user who is to own the new repository.
+        :param clone_callbacks: The RemoteCallbacks to provide when cloning the new repository.
+        :param delete_existing: If a repository with the given name already exists, delete it and create a new one.
+        :param private: Specifies if the new repository should be private.
+        """
+        try:
+            remote_repo = user.create_repo(
+                name,
+                (
+                    "This repository was auto generated by ForgeHub!"
+                    "To learn more please visit: https://github.com/joshmeranda/forgehub"
+                ),
+                private=private,
+                has_issues=False,
+                has_wiki=False,
+                has_downloads=False,
+                has_projects=False,
+                auto_init=False,
+            )
+        except GithubException as err:
+            if _did_repo_exist(err.data) and delete_existing:
+                try:
+                    user.get_repo(name).delete()
+                except GithubException as err:
+                    raise DriverInitError(f"could not delete pre-existing repository '{name}': {err}")
+
+            raise DriverInitError(f"could not create new repository '{name}': {err}")
+
+        self.clone_into(name, remote_repo.ssh_url, clone_callbacks)
 
     def forge_commits(self, commits_per_day: DataLevelMap):
         """Given a `DataLevelMap` mapping dates to the real amount of commit to be made.
@@ -128,8 +187,8 @@ class Driver:
 
         try:
             signature = Signature(
-                config[Driver.__GIT_CONFIG_USER_NAME],
-                config[Driver.__GIT_CONFIG_USER_EMAIL],
+                config[GitDriver.__GIT_CONFIG_USER_NAME],
+                config[GitDriver.__GIT_CONFIG_USER_EMAIL],
             )
         except ValueError:
             raise DriverForgeError(
@@ -159,7 +218,7 @@ class Driver:
 
                 try:
                     index = self.__repo.index
-                    index.add(Driver.__MUTATING_FILE_NAME)
+                    index.add(GitDriver.__MUTATING_FILE_NAME)
                     index.write()
 
                     tree = index.write_tree()
@@ -179,19 +238,24 @@ class Driver:
                     capture_output=True,
                 )
 
-    def push(self, remote_name: str = "origin"):
+    def push(
+        self,
+        remote_name: str = "origin",
+        push_callbacks: Optional[RemoteCallbacks] = None,
+    ):
         """Push to the remote with the given name.
 
         If an error occurs while pushing, an internal flag will be set and a cloned repository will not be removed when
         the `Driver` context is left.
 
         :param remote_name: The name of the target origin.
+        :param push_callbacks: The RemoteCallbacks to provide when pushing the repository.
         """
         try:
             remote = self.__repo.remotes[remote_name]
 
             # todo: we should accept this from user, or determine the default branch name
-            remote.push(["refs/heads/main"], callbacks=self.__push_callbacks)
+            remote.push(["refs/heads/main"], callbacks=push_callbacks)
         except KeyError:
             raise DriverPushError(
                 f"no such remote '{remote_name}' exists for the given repo"
