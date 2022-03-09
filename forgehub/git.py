@@ -172,7 +172,9 @@ class GitDriver:
                 try:
                     user.get_repo(name).delete()
                 except GithubException as err:
-                    raise DriverInitError(f"could not delete pre-existing repository '{name}': {err}")
+                    raise DriverInitError(
+                        f"could not delete pre-existing repository '{name}': {err}"
+                    )
 
             raise DriverInitError(f"could not create new repository '{name}': {err}")
 

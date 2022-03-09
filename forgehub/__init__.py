@@ -55,13 +55,37 @@ def __parse_args() -> Namespace:
 
     source_group = write_parser.add_mutually_exclusive_group()
     source_group.add_argument(
-        "text", nargs="?", help="the text that should be displayed on the github activity calendar"
+        "text",
+        nargs="?",
+        help="the text that should be displayed on the github activity calendar",
     )
     source_group.add_argument(
         "-l",
         "--load",
         type=FileType("r"),
         help="load an unscaled data level map from the given file",
+    )
+
+    create_group = write_parser.add_argument_group(
+        title="creation",
+        description="arguments controlling if and how a new repository is created",
+    )
+    create_group.add_argument(
+        "-c",
+        "--create",
+        action="store_true",
+        help="create a new local and remote repository  with the name given as repo rather than using an existing one (requires an access token)",
+    )
+    create_group.add_argument(
+        "-p",
+        "--private",
+        action="store_true",
+        help="specify that the new repository should be public rather than private (be careful of your activity calendar's 'Private Contributions' setting)",
+    )
+    create_group.add_argument(
+        "--delete",
+        action="store_true",
+        help="if a repository already exists for the authenticated user, delete and replace it (use with caution)",
     )
 
     ssh_group = write_parser.add_argument_group(
@@ -226,6 +250,7 @@ def __write(namespace: Namespace) -> int:
     print(f"retrieving activity for user '{user}'...")
     _, max_events_per_day = events.get_max_events_per_day(user)
     boundaries = events.get_data_level_boundaries(max_events_per_day, namespace.dilute)
+    data_level_map.scale_to_boundaries(boundaries)
 
     print("initializing repository...")
     private, public = __get_ssh_keys(namespace)
@@ -241,13 +266,17 @@ def __write(namespace: Namespace) -> int:
     callbacks = SshRemoteCallbacks(private, public)
 
     try:
-        with Driver(repo_path, repo_upstream, callbacks, callbacks) as driver:
-            print("crafting commits...")
-            driver.forge_commits(data_level_map)
+        with GitDriver() as driver:
+            if namespace.create:
+                if not isinstance(user, AuthenticatedUser.AuthenticatedUser):
+                    print("to create a new repository you must provide a token")
+                    return 5
 
-            if not namespace.no_push:
-                print("pushing to upstream...")
-                driver.push()
+                driver.create(namespace.repo, user, callbacks, namespace.delete, namespace.private)
+            elif repo_upstream is not None:
+                driver.clone_into(repo_path, repo_upstream, callbacks)
+            else:
+                driver.init_repo(repo_path)
     except DriverInitError as err:
         print(f"error initializing repository: {err}")
         return 2
