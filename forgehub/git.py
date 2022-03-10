@@ -1,5 +1,3 @@
-from github import GithubException
-
 from forgehub.render import DataLevelMap
 
 from typing import Optional
@@ -7,6 +5,7 @@ from os import path
 import shutil
 import subprocess
 
+from github import GithubException
 from github.AuthenticatedUser import AuthenticatedUser
 
 import pygit2
@@ -64,7 +63,10 @@ class DriverPushError(DriverError):
 
 
 def _did_repo_exist(data: dict) -> bool:
-    """Check if the data from a `GithubException` indicates the repository already existed"""
+    """Check if the data from a `GithubException` indicates the repository already existed.
+
+    :param data: The data received  from a `GithubException`.
+    """
     try:
         error_messages = [error["message"] for error in data["errors"]]
 
@@ -168,10 +170,8 @@ class GitDriver:
                 auto_init=False,
             )
         except GithubException as err:
-            print(f"=== [GitDriver.create] {_did_repo_exist(err.data)} {replace_existing} ===")
             if _did_repo_exist(err.data) and replace_existing:
                 try:
-                    print(f"=== [GitDriver.create] deleting repo {name} ===")
                     user.get_repo(name).delete()
 
                     remote_repo = user.create_repo(
@@ -187,6 +187,8 @@ class GitDriver:
                         has_projects=False,
                         auto_init=False,
                     )
+
+                    default_branch = remote_repo.default_branch
                 except (GithubException, ValueError) as err:
                     raise DriverInitError(
                         f"could not delete pre-existing repository '{name}': {err}"
@@ -259,6 +261,7 @@ class GitDriver:
     def push(
         self,
         remote_name: str = "origin",
+        ref_specs: Optional[list[str]] = None,
         push_callbacks: Optional[RemoteCallbacks] = None,
     ):
         """Push to the remote with the given name.
@@ -267,13 +270,16 @@ class GitDriver:
         the `Driver` context is left.
 
         :param remote_name: The name of the target origin.
+        :param ref_specs: A list of the references to use when pushing, defaults to `["refs/heads/main"]`.
         :param push_callbacks: The RemoteCallbacks to provide when pushing the repository.
         """
+        if ref_specs is None:
+            ref_specs = ["refs/heads/main"]
+
         try:
             remote = self.__repo.remotes[remote_name]
 
-            # todo: we should accept this from user, or determine the default branch name
-            remote.push(["refs/heads/main"], callbacks=push_callbacks)
+            remote.push(ref_specs, callbacks=push_callbacks)
         except KeyError:
             raise DriverPushError(
                 f"no such remote '{remote_name}' exists for the given repo"
