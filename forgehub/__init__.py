@@ -125,6 +125,14 @@ def __parse_args() -> Namespace:
         help="do not push the crafted commits automatically (implies (--no-clean)",
     )
 
+    push_group = write_parser.add_argument_group(title="push", description="a group of argument modifying the default push behavior")
+    push_group.add_argument(
+        "--remote", help="the name of the remote to push to (default to origin)", default="origin"
+    )
+    push_group.add_argument(
+        "--branch", help="the name of the branch to push to (defaults to main)", default="main",
+    )
+
     # # # # # # # # # # # # # # # # # #
     # subcommand dump                 #
     # # # # # # # # # # # # # # # # # #
@@ -293,7 +301,9 @@ def __write(namespace: Namespace) -> int:
             driver.forge_commits(data_level_map)
 
             print("pushing to upstream...")
-            driver.push(push_callbacks=callbacks)
+            ref_specs = [f"refs/heads/{namespace.branch}"]
+
+            driver.push(remote_name=namespace.remote, ref_specs=ref_specs, push_callbacks=callbacks)
     except DriverInitError as err:
         print(f"error initializing repository: {err}")
         return 2

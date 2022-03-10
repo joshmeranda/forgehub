@@ -275,6 +275,10 @@ class GitDriver:
         """
         if ref_specs is None:
             ref_specs = ["refs/heads/main"]
+        else:
+            for spec in ref_specs:
+                if not pygit2.reference_is_valid_name(spec):
+                    raise DriverPushError(f"refspec name '{spec}' is not valid")
 
         try:
             remote = self.__repo.remotes[remote_name]
