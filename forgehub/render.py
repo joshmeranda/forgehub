@@ -273,9 +273,7 @@ CHARACTERS_5_BIT: dict[str, tuple[int]] = {
           4, 0, 0, 0, 0, 0, 0,
           4, 0, 0, 0, 0, 0, 0),
 
-    " ": (0, 0, 0, 0, 0, 0, 0,
-          0, 0, 0, 0, 0, 0, 0,
-          0, 0, 0, 0, 0, 0, 0),
+    " ": (0, 0, 0, 0, 0, 0, 0),
 
     ":": (0, 0, 0, 0, 0, 0, 0,
           0, 0, 3, 0, 4, 0, 0,
@@ -329,7 +327,7 @@ class TextRenderer(RendererBase):
         date = end_date if end_date is not None else get_last_week_end()
         data_level_map = DataLevelMap()
 
-        for c in reversed(obj):
+        for i, c in enumerate(reversed(obj)):
             try:
                 data_levels = CHARACTERS_5_BIT[c]
             except KeyError:
@@ -339,8 +337,9 @@ class TextRenderer(RendererBase):
                 data_level_map[date] = data_level
                 date -= timedelta(days=1)
 
-            for _ in range(7):
-                data_level_map[date] = 0
-                date -= timedelta(days=1)
+            if i < len(obj) - 1:
+                for _ in range(7):
+                    data_level_map[date] = 0
+                    date -= timedelta(days=1)
 
         return data_level_map
